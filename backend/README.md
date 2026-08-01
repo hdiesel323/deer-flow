@@ -98,6 +98,7 @@ LLM-powered persistent context retention across conversations:
 - **System prompt injection**: Top facts + context injected into agent prompts
 - **Run-level memory identity**: `GET /api/threads/{thread_id}/runs/{run_id}/events?event_types=context:memory` returns the SHA-256 identity of the effective hidden memory block without copying memory text into the event store
 - **Storage**: JSON file with mtime-based cache invalidation
+- **Optional Kanister sidecar**: When `memory.kanister.enabled` is true, DeerFlow calls the local sidecar at `POST /v1/recall` before the first agent turn and appends normalized recall items with freshness/provenance labels to the frozen system reminder. After completion it preserves the local memory queue and also emits a best-effort idempotent `SessionEventV1` outcome to `POST /v1/write`. Sidecar failures are marked partial/unavailable in prompt context or logged for writes, and never block agent execution.
 
 ### Tool Ecosystem
 
@@ -290,7 +291,7 @@ Key sections:
 - `title` - Auto-title generation settings
 - `summarization` - Context summarization settings
 - `subagents` - Subagent system (enabled/disabled)
-- `memory` - Memory system settings (enabled, storage, debounce, facts limits)
+- `memory` - Memory system settings (enabled, storage, debounce, facts limits, optional local Kanister sidecar URL/budget/scopes)
 
 Provider note:
 - `models[*].use` references provider classes by module path (for example `langchain_openai:ChatOpenAI`).

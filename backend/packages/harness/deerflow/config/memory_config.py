@@ -18,7 +18,17 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 # Host-shared MemoryConfig fields (read by every backend / call site / factory).
-_SHARED_FIELDS = frozenset({"enabled", "mode", "injection_enabled", "shutdown_flush_timeout_seconds", "manager_class", "backend_config"})
+_SHARED_FIELDS = frozenset(
+    {
+        "enabled",
+        "mode",
+        "injection_enabled",
+        "shutdown_flush_timeout_seconds",
+        "manager_class",
+        "backend_config",
+        "kanister",
+    }
+)
 
 # DeerMem-private fields that used to live at the top level of `memory:` in
 # config.yaml (pre-abstraction). On load they are auto-migrated into
@@ -50,6 +60,35 @@ _LEGACY_DEERMEM_FIELDS = frozenset(
         "model_name",
     }
 )
+
+
+class KanisterMemoryConfig(BaseModel):
+    """Optional unified Kanister memory sidecar configuration."""
+
+    enabled: bool = Field(
+        default=False,
+        description="Whether to call the local Kanister sidecar for recall/write operations",
+    )
+    base_url: str = Field(
+        default="http://127.0.0.1:17890",
+        description="Base URL for the local Kanister memory sidecar",
+    )
+    timeout_seconds: float = Field(
+        default=0.5,
+        ge=0.05,
+        le=10.0,
+        description="HTTP timeout for best-effort sidecar calls",
+    )
+    recall_budget: int = Field(
+        default=8,
+        ge=1,
+        le=50,
+        description="Maximum number of recall items requested before the first agent turn",
+    )
+    scopes: list[str] = Field(
+        default_factory=lambda: ["user", "workspace", "task", "session"],
+        description="Default recall scopes when runtime context does not provide memory_scopes",
+    )
 
 
 class MemoryConfig(BaseModel):
@@ -108,6 +147,10 @@ class MemoryConfig(BaseModel):
             "live in the host config file (`config.yaml` `memory.backend_config`); "
             "they do not belong on the shared `MemoryConfig` schema."
         ),
+    )
+    kanister: KanisterMemoryConfig = Field(
+        default_factory=KanisterMemoryConfig,
+        description="Optional unified Kanister memory sidecar integration",
     )
 
 

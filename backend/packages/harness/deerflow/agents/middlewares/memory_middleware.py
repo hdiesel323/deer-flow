@@ -10,6 +10,7 @@ from langgraph.config import get_config
 from langgraph.runtime import Runtime
 
 from deerflow.agents.memory import get_memory_manager
+from deerflow.agents.memory.kanister_sidecar import emit_session_outcome
 from deerflow.config.memory_config import get_memory_config
 from deerflow.runtime.user_context import resolve_runtime_user_id
 from deerflow.trace_context import DEERFLOW_TRACE_METADATA_KEY, get_current_trace_id, normalize_trace_id
@@ -106,6 +107,14 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
             user_id=user_id,
             trace_id=trace_id,
         )
+        config = self._memory_config or get_memory_config()
+        emit_session_outcome(
+            config,
+            state=state,
+            runtime=runtime,
+            agent_name=self._agent_name,
+            messages=messages,
+        )
 
         return None
 
@@ -123,5 +132,14 @@ class MemoryMiddleware(AgentMiddleware[MemoryMiddlewareState]):
             agent_name=self._agent_name,
             user_id=user_id,
             trace_id=trace_id,
+        )
+        config = self._memory_config or get_memory_config()
+        await asyncio.to_thread(
+            emit_session_outcome,
+            config,
+            state=state,
+            runtime=runtime,
+            agent_name=self._agent_name,
+            messages=messages,
         )
         return None
