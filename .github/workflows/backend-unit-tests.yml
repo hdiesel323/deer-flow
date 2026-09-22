@@ -57,7 +57,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U deerflow -d deerflow_test"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -72,7 +72,15 @@ jobs:
           --health-retries 5
 
     env:
-      TEST_POSTGRES_URI: postgresql://deerflow:deerflow@localhost:5432/deerflow_test?sslmode=disable
+      TEST_POSTGRES_URI: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
+      # GitHub runners are root; force libpq/psycopg defaults away from role "root".
+      PGUSER: deerflow
+      PGPASSWORD: deerflow
+      PGDATABASE: deerflow_test
+      PGHOST: localhost
+      PGPORT: "5432"
+      DEERFLOW_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
+      DEDUPE_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
 
     steps:
       - name: Checkout
@@ -92,10 +100,4 @@ jobs:
 
       - name: Run unit tests of backend
         working-directory: backend
-        env:
-          # Expose the job's Postgres service to the cross-pod dedupe integration
-          # tests (issue #4120), which read DEDUPE_TEST_POSTGRES_URL. Without this
-          # mapping those tests silently skip and the headline capability is never
-          # exercised in CI.
-          DEDUPE_TEST_POSTGRES_URL: ${{ env.TEST_POSTGRES_URI }}
         run: make test

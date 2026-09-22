@@ -166,7 +166,13 @@ class DynamicContextMiddleware(AgentMiddleware):
         self._agent_name = agent_name
         self._app_config = app_config
 
-    def _build_full_reminder(self, runtime: Runtime | None = None) -> tuple[str, str | None]:
+    def _build_full_reminder(
+        self,
+        *,
+        state: dict | None = None,
+        runtime: Runtime | None = None,
+        query: object | None = None,
+    ) -> tuple[str, str | None]:
         """Return (date_reminder, memory_block | None).
 
         Framework-owned data (date) is separated from user-owned data (memory)
@@ -175,6 +181,7 @@ class DynamicContextMiddleware(AgentMiddleware):
         system privilege (OWASP LLM01).
         """
         from deerflow.agents.lead_agent.prompt import _get_memory_context
+        from deerflow.agents.memory.kanister_sidecar import recall_reminder
 
         injection_enabled = self._app_config.memory.injection_enabled if self._app_config else True
         memory_context = (
@@ -186,6 +193,18 @@ class DynamicContextMiddleware(AgentMiddleware):
             if injection_enabled
             else ""
         )
+        memory_config = self._app_config.memory if self._app_config else None
+        kanister_context = (
+            recall_reminder(
+                memory_config,
+                state=state or {},
+                runtime=runtime,
+                agent_name=self._agent_name,
+                query=query,
+            )
+            if memory_config is not None
+            else None
+        )
         current_date = datetime.now().strftime("%Y-%m-%d, %A")
 
         date_reminder = "\n".join(
@@ -195,8 +214,8 @@ class DynamicContextMiddleware(AgentMiddleware):
                 "</system-reminder>",
             ]
         )
-
-        memory_block = memory_context.strip() if memory_context else None
+        memory_parts = [part.strip() for part in (memory_context, kanister_context) if part and part.strip()]
+        memory_block = "\n\n".join(memory_parts) or None
 
         return date_reminder, memory_block
 
@@ -284,7 +303,11 @@ class DynamicContextMiddleware(AgentMiddleware):
             first_idx = next((i for i, m in enumerate(messages) if _is_user_injection_target(m)), None)
             if first_idx is None:
                 return None
-            date_reminder, memory_block = self._build_full_reminder(runtime)
+            date_reminder, memory_block = self._build_full_reminder(
+                state=state,
+                runtime=runtime,
+                query=messages[first_idx].content,
+            )
             logger.info(
                 "DynamicContextMiddleware: injecting full reminder (has_memory=%s) into first HumanMessage id=%r",
                 memory_block is not None,

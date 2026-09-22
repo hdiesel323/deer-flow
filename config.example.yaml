@@ -15,7 +15,7 @@
 # ============================================================================
 # Bump this number when the config schema changes.
 # Run `make config-upgrade` to merge new fields into your local config.yaml.
-config_version: 31
+config_version: 32
 
 # ============================================================================
 # Logging
@@ -1696,6 +1696,16 @@ memory:
   # exposing query-aware search (mem0 does this). Tool calls go through the
   # active MemoryManager; unsupported fact CRUD returns a JSON error.
   mode: middleware
+  kanister:
+    enabled: false # Optional unified Kanister sidecar integration
+    base_url: http://127.0.0.1:17890 # Host-local sidecar URL
+    timeout_seconds: 0.5 # Best-effort timeout; outages do not block the agent
+    recall_budget: 8 # Maximum normalized recall items before the first turn
+    scopes:
+      - user
+      - workspace
+      - task
+      - session
   # Backend-private config (a dict), passed verbatim to the backend __init__.
   # Each backend self-interprets it (DeerMem parses it into DeerMemConfig).
   #
