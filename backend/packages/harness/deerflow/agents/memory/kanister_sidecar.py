@@ -17,8 +17,13 @@ from deerflow.runtime.user_context import DEFAULT_USER_ID, resolve_runtime_user_
 
 logger = logging.getLogger(__name__)
 
+# Env-style secret assignments. Underscore-prefixed names like OPENAI_API_KEY
+# must match: ``\b`` alone fails because ``_`` is a word character, so there is
+# no boundary between OPENAI_ and API_KEY. Allow ``SEGMENT_`` prefixes before the
+# denylist keyword instead.
+_SECRET_NAME = r"(?:password|passwd|pwd|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|secret[_-]?key)"
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(password|passwd|pwd|api[_-]?key|access[_-]?token|refresh[_-]?token|secret|secret[_-]?key)\s*[:=]\s*[^\s,;]+"),
+    re.compile(rf"(?i)(?<![A-Za-z0-9])((?:[A-Za-z0-9]+_)*{_SECRET_NAME})\s*[:=]\s*[^\s,;]+"),
     re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b"),

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -224,3 +225,72 @@ def test_memory_middleware_write_outage_is_non_blocking(monkeypatch):
 
     assert result is None
     manager.add.assert_called_once()
+
+
+def test_redact_credentials_masks_prefixed_env_api_keys():
+    """Prefixed env names must redact like bare API_KEY= assignments.
+
+    Regression for the P1 hold: word-boundary ``api_key`` misses OPENAI_API_KEY
+    because ``_`` is a word character (no boundary before API).
+    """
+    from deerflow.agents.memory.kanister_sidecar import redact_credentials
+
+    cases = [
+        "OPENAI_API_KEY=sk-test-plain-value",
+        "FOO_OPENAI_API_KEY=sk-test-plain-value",
+        "export OPENAI_API_KEY=plain-secret-xyz",
+        "prefix OPENAI_API_KEY=plain-secret-xyz",
+        "ANTHROPIC_API_KEY=my-anth-secret-xyz",
+        "my_api_key=value12345",
+        "API_KEY=bare-secret-value",
+        "AWS_SECRET_KEY=awssecretvalue12",
+    ]
+    for raw in cases:
+        redacted = redact_credentials(raw)
+        assert "[REDACTED]" in redacted, raw
+        # Value after = must not leak (key name may remain).
+        value = raw.split("=", 1)[1]
+        assert value not in redacted, (raw, redacted)
+
+    # Non-secret lookalikes must stay intact.
+    assert redact_credentials("notasecret=should-stay") == "notasecret=should-stay"
+    assert redact_credentials("api_keychain=should-stay") == "api_keychain=should-stay"
+
+
+def test_abefore_agent_redacts_prefixed_openai_key_via_to_thread(monkeypatch):
+    """Async injection path (asyncio.to_thread) must still redact query secrets."""
+    from deerflow.agents.memory import kanister_sidecar
+
+    captured = {}
+
+    def fake_urlopen(request, timeout):
+        captured["body"] = _request_body(request)
+        return _Response({"items": [{"content": "fact", "provenance": "sidecar"}]})
+
+    monkeypatch.setattr(kanister_sidecar.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr("deerflow.agents.lead_agent.prompt._get_memory_context", lambda *args, **kwargs: "")
+    monkeypatch.setattr("deerflow.agents.middlewares.dynamic_context_middleware.datetime", MagicMock())
+
+    import deerflow.agents.middlewares.dynamic_context_middleware as dynamic_context_module
+
+    dynamic_context_module.datetime.now.return_value.strftime.return_value = "2026-05-08, Friday"
+
+    mw = DynamicContextMiddleware(app_config=_app_config(kanister={"enabled": True}))
+    result = asyncio.run(
+        mw.abefore_agent(
+            {
+                "messages": [
+                    HumanMessage(
+                        content="Use FOO_OPENAI_API_KEY=plain-secret-xyz for this?",
+                        id="msg-async-1",
+                    )
+                ]
+            },
+            _runtime(thread_id="thread-1", run_id="run-async-1"),
+        )
+    )
+
+    assert result is not None
+    body = json.dumps(captured["body"])
+    assert "plain-secret-xyz" not in body
+    assert "OPENAI_API_KEY=[REDACTED]" in body or "FOO_OPENAI_API_KEY=[REDACTED]" in body
