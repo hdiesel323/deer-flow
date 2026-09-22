@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from contextlib import closing
 from types import SimpleNamespace
 
 import pytest
@@ -24,12 +25,22 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+def _public_table_names() -> set[str]:
+    """Snapshot public tables without keeping a psycopg connection open."""
+    import psycopg
+
+    with closing(psycopg.connect(POSTGRES_URL or "", autocommit=True)) as conn:
+        rows = conn.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'").fetchall()
+    return {table_name for (table_name,) in rows}
+
+
 @pytest.mark.anyio
 async def test_postgres_schema_places_orm_checkpointer_and_store_tables_together():
     """Verify a real PostgreSQL backend places all persistence tables in one schema."""
     schema = f"deerflow_test_{uuid.uuid4().hex[:12]}"
     db_config = DatabaseConfig(backend="postgres", postgres_url=POSTGRES_URL or "", postgres_schema=schema)
     app_config = SimpleNamespace(checkpointer=None, database=db_config)
+    public_tables_before = _public_table_names()
 
     await init_engine_from_config(db_config)
     engine = get_engine()
@@ -58,7 +69,8 @@ async def test_postgres_schema_places_orm_checkpointer_and_store_tables_together
 
         by_schema = {(row.table_schema, row.table_name) for row in rows}
         orm_tables = {"runs", "run_events", "threads_meta", "feedback", "users"}
-        assert {("public", table) for table in orm_tables}.isdisjoint(by_schema)
+        public_tables_after = {table_name for table_schema, table_name in by_schema if table_schema == "public"}
+        assert public_tables_after == public_tables_before
         assert {(schema, table) for table in orm_tables}.issubset(by_schema)
         assert any(table_schema == schema and "checkpoint" in table_name for table_schema, table_name in by_schema)
         assert any(table_schema == schema and ("store" in table_name or "migration" in table_name) for table_schema, table_name in by_schema)
@@ -84,11 +96,12 @@ def test_sync_postgres_schema_places_checkpointer_and_store_tables_together():
     )
     checkpointer_config = _resolve_checkpointer_config(SimpleNamespace(checkpointer=None, database=db_config))
     store_config = _resolve_store_config(SimpleNamespace(checkpointer=None, database=db_config))
+    public_tables_before = _public_table_names()
 
     try:
         # Ensure target schema exists before LangGraph sync setup (async path does
         # this inside init_engine; sync path previously leaked tables into public).
-        with psycopg.connect(POSTGRES_URL or "", autocommit=True) as conn:
+        with closing(psycopg.connect(POSTGRES_URL or "", autocommit=True)) as conn:
             conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
 
         with _sync_checkpointer_cm(checkpointer_config) as checkpointer:
@@ -96,7 +109,7 @@ def test_sync_postgres_schema_places_checkpointer_and_store_tables_together():
         with _sync_store_cm(store_config) as store:
             assert store is not None
 
-        with psycopg.connect(POSTGRES_URL or "", autocommit=True) as conn:
+        with closing(psycopg.connect(POSTGRES_URL or "", autocommit=True)) as conn:
             rows = conn.execute(
                 """
                 SELECT table_schema, table_name
@@ -110,8 +123,8 @@ def test_sync_postgres_schema_places_checkpointer_and_store_tables_together():
         by_schema = {(table_schema, table_name) for table_schema, table_name in rows}
         assert any(table_schema == schema and "checkpoint" in table_name for table_schema, table_name in by_schema)
         assert any(table_schema == schema and ("store" in table_name or "migration" in table_name) for table_schema, table_name in by_schema)
-        # The DeerFlow LangGraph tables must NOT leak into public.
-        assert not any(table_schema == "public" and ("checkpoint" in table_name or table_name == "store") for table_schema, table_name in by_schema)
+        public_tables_after = {table_name for table_schema, table_name in by_schema if table_schema == "public"}
+        assert public_tables_after == public_tables_before
     finally:
-        with psycopg.connect(POSTGRES_URL or "", autocommit=True) as conn:
+        with closing(psycopg.connect(POSTGRES_URL or "", autocommit=True)) as conn:
             conn.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')

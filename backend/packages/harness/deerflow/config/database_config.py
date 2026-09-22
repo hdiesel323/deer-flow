@@ -31,11 +31,10 @@ need to do any environment variable processing.
 
 from __future__ import annotations
 
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
-
 import logging
 import os
 from typing import Any, Literal
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -100,7 +99,6 @@ class CheckpointGraphCacheConfig(BaseModel):
         ge=1,
         description=("Max compiled thread-state accessor graphs cached by the gateway (keyed per assistant, channel mode, and snapshot cadence)."),
     )
-
 
 
 _LIBPQ_ONLY_QUERY_KEYS = frozenset({"sslmode", "channel_binding"})
