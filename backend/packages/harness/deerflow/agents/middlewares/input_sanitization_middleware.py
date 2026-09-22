@@ -68,6 +68,7 @@ _BLOCKED_TAG_NAMES: frozenset[str] = frozenset(
         "system-reminder",
         "system_reminder",
         "memory",
+        "kanister-memory",  # Kanister sidecar recall block (RED-3060)
         "current_date",
         "think",
         "analysis",

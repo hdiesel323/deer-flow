@@ -31,6 +31,8 @@ need to do any environment variable processing.
 
 from __future__ import annotations
 
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 import logging
 import os
 from typing import Any, Literal
@@ -98,6 +100,19 @@ class CheckpointGraphCacheConfig(BaseModel):
         ge=1,
         description=("Max compiled thread-state accessor graphs cached by the gateway (keyed per assistant, channel mode, and snapshot cadence)."),
     )
+
+
+
+_LIBPQ_ONLY_QUERY_KEYS = frozenset({"sslmode", "channel_binding"})
+
+
+def _strip_libpq_only_query(url: str) -> str:
+    """Drop libpq-only query params that asyncpg rejects as connect kwargs."""
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    kept = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in _LIBPQ_ONLY_QUERY_KEYS]
+    return urlunsplit(parts._replace(query=urlencode(kept)))
 
 
 class DatabaseConfig(BaseModel):
@@ -247,7 +262,8 @@ class DatabaseConfig(BaseModel):
             elif url.startswith("postgres://"):
                 # libpq's short alias: accepted by the psycopg checkpointer, but not a SQLAlchemy dialect.
                 url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-            return url
+            # asyncpg rejects libpq-only query keys (e.g. sslmode) as connect kwargs.
+            return _strip_libpq_only_query(url)
         raise ValueError(f"No SQLAlchemy URL for backend={self.backend!r}")
 
     @property

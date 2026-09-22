@@ -72,15 +72,15 @@ jobs:
           --health-retries 5
 
     env:
-      TEST_POSTGRES_URI: postgresql://deerflow:deerflow@localhost:5432/deerflow_test?sslmode=disable
+      TEST_POSTGRES_URI: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
       # GitHub runners are root; force libpq/psycopg defaults away from role "root".
       PGUSER: deerflow
       PGPASSWORD: deerflow
       PGDATABASE: deerflow_test
       PGHOST: localhost
       PGPORT: "5432"
-      DEERFLOW_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test?sslmode=disable
-      DEDUPE_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test?sslmode=disable
+      DEERFLOW_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
+      DEDUPE_TEST_POSTGRES_URL: postgresql://deerflow:deerflow@localhost:5432/deerflow_test
 
     steps:
       - name: Checkout

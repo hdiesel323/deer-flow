@@ -86,6 +86,11 @@ def test_sync_postgres_schema_places_checkpointer_and_store_tables_together():
     store_config = _resolve_store_config(SimpleNamespace(checkpointer=None, database=db_config))
 
     try:
+        # Ensure target schema exists before LangGraph sync setup (async path does
+        # this inside init_engine; sync path previously leaked tables into public).
+        with psycopg.connect(POSTGRES_URL or "", autocommit=True) as conn:
+            conn.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+
         with _sync_checkpointer_cm(checkpointer_config) as checkpointer:
             assert checkpointer is not None
         with _sync_store_cm(store_config) as store:
